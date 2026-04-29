@@ -10,30 +10,41 @@ import { ROLES } from '@/lib/constants';
 import { useAuth } from '@/context/AuthContext';
 
 const NOTIF_COLORS = {
-  log_approved: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-  log_rejected: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-  project_approved: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-  project_rejected: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-  report_submitted: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  system: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+  log_approved: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
+  log_rejected: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',
+  log_resubmitted: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400',
+  project_approved: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
+  project_rejected: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',
+  report_submitted: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400',
+  system: 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300',
 };
 
 export default function NotificationsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const { data, mutate } = useApi('/notifications');
-  const notifications = data?.notifications || [];
+
+  // API returns { success, data: { notifications }, unreadCount }
+  const notifications = data?.data?.notifications || [];
   const unread = data?.unreadCount || 0;
 
   const handleMarkRead = async (id) => {
-    await api.patch(`/notifications/${id}/read`);
-    mutate();
+    try {
+      await api.patch(`/notifications/${id}/read`);
+      mutate();
+    } catch (err) {
+      // Silent — not critical
+    }
   };
 
   const handleMarkAll = async () => {
-    await api.patch('/notifications/read-all');
-    toast.success('All notifications marked as read.');
-    mutate();
+    try {
+      await api.patch('/notifications/read-all');
+      toast.success('All notifications marked as read.');
+      mutate();
+    } catch (err) {
+      toast.error('Failed to mark all as read.');
+    }
   };
 
   return (
@@ -57,21 +68,30 @@ export default function NotificationsPage() {
           ) : (
             <div className="space-y-2">
               {notifications.map((notif) => (
-                <button key={notif._id} onClick={() => !notif.isRead && handleMarkRead(notif._id)}
+                <button
+                  key={notif._id}
+                  onClick={() => !notif.isRead && handleMarkRead(notif._id)}
                   className={`w-full text-left flex items-start gap-3 p-4 rounded-xl border transition-colors ${
                     notif.isRead
                       ? 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
                       : 'bg-blue-50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800'
-                  }`}>
+                  }`}
+                >
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold ${NOTIF_COLORS[notif.type] || NOTIF_COLORS.system}`}>
-                    {notif.isRead ? <Circle className="h-3 w-3 opacity-30" /> : <Circle className="h-3 w-3 fill-current" />}
+                    {notif.isRead
+                      ? <Circle className="h-3 w-3 opacity-30" />
+                      : <Circle className="h-3 w-3 fill-current" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className={`text-sm font-medium ${notif.isRead ? 'text-gray-700 dark:text-gray-300' : 'text-gray-900 dark:text-white'}`}>
                       {notif.title}
                     </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">{notif.message}</p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{formatRelativeTime(notif.createdAt)}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">
+                      {notif.message}
+                    </p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                      {formatRelativeTime(notif.createdAt)}
+                    </p>
                   </div>
                   {!notif.isRead && (
                     <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0 mt-1.5" />

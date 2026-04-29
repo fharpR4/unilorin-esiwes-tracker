@@ -13,8 +13,14 @@ export default function AdminUsersPage() {
   const { toast } = useToast();
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
-  const { data, isLoading, mutate } = useApi(`/users?${search ? `search=${encodeURIComponent(search)}&` : ''}${roleFilter ? `role=${roleFilter}` : ''}`);
-  const users = data?.users || [];
+
+  const params = new URLSearchParams();
+  if (search) params.set('search', search);
+  if (roleFilter) params.set('role', roleFilter);
+
+  const { data, isLoading, mutate } = useApi(`/users?${params.toString()}`);
+  const users = data?.data?.users || [];
+  const total = data?.count || 0;
 
   const toggleActive = async (userId, isActive) => {
     try {
@@ -35,36 +41,61 @@ export default function AdminUsersPage() {
             <div className="relative flex-1 min-w-48">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search users..."
-                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-unilorin-primary dark:focus:ring-blue-500 transition" />
+                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-unilorin-primary dark:focus:ring-blue-500 transition" />
             </div>
             <div className="relative">
               <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}
-                className="pl-3 pr-8 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-unilorin-primary dark:focus:ring-blue-500 transition appearance-none">
+                className="pl-3 pr-8 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-unilorin-primary dark:focus:ring-blue-500 transition appearance-none">
                 <option value="">All Roles</option>
-                {Object.values(ROLES).map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                {Object.values(ROLES).map((r) => (
+                  <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                ))}
               </select>
               <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
             </div>
           </div>
 
+          {!isLoading && total > 0 && (
+            <p className="text-xs text-gray-400">{total} user{total !== 1 ? 's' : ''} found</p>
+          )}
+
           {isLoading ? <LoadingSpinner /> : (
             <div className="space-y-2">
               {users.map((user) => (
-                <div key={user._id} className="flex items-center gap-3 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                <div key={user._id}
+                  className="flex items-center gap-3 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${user.isActive ? 'bg-unilorin-primary dark:bg-blue-700' : 'bg-gray-300 dark:bg-gray-600'}`}>
-                    <span className="text-xs font-bold text-white">{getInitials(user.firstName, user.lastName)}</span>
+                    <span className="text-xs font-bold text-white">
+                      {getInitials(user.firstName, user.lastName)}
+                    </span>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{user.firstName} {user.lastName}</p>
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 capitalize">{user.role}</span>
-                      {!user.isActive && <span className="text-xs px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">Inactive</span>}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                        {user.firstName} {user.lastName}
+                      </p>
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 capitalize">
+                        {user.role}
+                      </span>
+                      {!user.isActive && (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">
+                          Inactive
+                        </span>
+                      )}
                     </div>
-                    <p className="text-xs text-gray-400 truncate">{user.email} · Joined {formatDateShort(user.createdAt)}</p>
+                    <p className="text-xs text-gray-400 truncate mt-0.5">
+                      {user.email} · Joined {formatDateShort(user.createdAt)}
+                    </p>
                   </div>
-                  <button onClick={() => toggleActive(user._id, user.isActive)}
+                  <button
+                    onClick={() => toggleActive(user._id, user.isActive)}
                     title={user.isActive ? 'Deactivate user' : 'Reactivate user'}
-                    className={`p-2 rounded-lg transition-colors ${user.isActive ? 'hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500' : 'hover:bg-green-50 dark:hover:bg-green-900/20 text-green-500'}`}>
+                    className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
+                      user.isActive
+                        ? 'hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500'
+                        : 'hover:bg-green-50 dark:hover:bg-green-900/20 text-green-500'
+                    }`}
+                  >
                     {user.isActive ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
                   </button>
                 </div>

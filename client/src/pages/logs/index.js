@@ -12,8 +12,9 @@ import { formatDateShort, formatRelativeTime, truncate } from '@/lib/utils';
 export default function LogsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const { data, isLoading } = useApi(`/logs${statusFilter ? `?status=${statusFilter}` : ''}`);
-  const logs = data?.logs || [];
 
+  // API returns { success, data: { logs }, count, page, pages }
+  const logs = data?.data?.logs || [];
   const statuses = ['', 'pending', 'approved', 'rejected', 'resubmitted'];
 
   return (
@@ -21,28 +22,38 @@ export default function LogsPage() {
       <Head><title>UniIlorin E-SIWES — My Logs</title></Head>
       <AppLayout pageTitle="My Logs" allowedRoles={[ROLES.STUDENT]}>
         <div className="space-y-4">
-          {/* Filter bar */}
           <div className="flex items-center gap-2 flex-wrap">
-            <Filter className="h-4 w-4 text-gray-400" />
-            {statuses.map((s) => (
-              <button key={s} onClick={() => setStatusFilter(s)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
-                  statusFilter === s
-                    ? 'bg-unilorin-primary dark:bg-blue-600 text-white border-unilorin-primary dark:border-blue-600'
-                    : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-unilorin-primary dark:hover:border-blue-500'
-                }`}>
-                {s ? LOG_STATUS_LABELS[s] : 'All'}
-              </button>
-            ))}
-            <Link href="/logs/new" className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-unilorin-primary dark:bg-blue-600 text-white rounded-full text-xs font-medium hover:opacity-90 transition-opacity">
-              <Plus className="h-3.5 w-3.5" /> New Log
+            <Filter className="h-4 w-4 text-gray-400 flex-shrink-0" />
+            <div className="flex gap-2 flex-wrap flex-1">
+              {statuses.map((s) => (
+                <button key={s} onClick={() => setStatusFilter(s)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
+                    statusFilter === s
+                      ? 'bg-unilorin-primary dark:bg-blue-600 text-white border-transparent'
+                      : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-unilorin-primary dark:hover:border-blue-500'
+                  }`}>
+                  {s ? LOG_STATUS_LABELS[s] : 'All'}
+                </button>
+              ))}
+            </div>
+            <Link href="/logs/new"
+              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-unilorin-primary dark:bg-blue-600 text-white rounded-full text-xs font-medium hover:opacity-90 transition-opacity">
+              <Plus className="h-3.5 w-3.5" />New Log
             </Link>
           </div>
 
           {isLoading ? <LoadingSpinner /> : logs.length === 0 ? (
-            <EmptyState icon={BookOpen} title="No logs found"
+            <EmptyState
+              icon={BookOpen}
+              title="No logs found"
               description={statusFilter ? `No logs with status "${LOG_STATUS_LABELS[statusFilter]}"` : "You haven't submitted any logs yet."}
-              action={<Link href="/logs/new" className="px-4 py-2 bg-unilorin-primary text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity">Submit First Log</Link>} />
+              action={
+                <Link href="/logs/new"
+                  className="px-4 py-2 bg-unilorin-primary text-white rounded-xl text-sm font-medium hover:opacity-90 transition-opacity">
+                  Submit First Log
+                </Link>
+              }
+            />
           ) : (
             <div className="space-y-3">
               {logs.map((log) => (
