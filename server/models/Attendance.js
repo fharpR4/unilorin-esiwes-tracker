@@ -1,5 +1,18 @@
 const mongoose = require('mongoose');
 
+const geoPointSchema = {
+  type: {
+    type: String,
+    enum: ['Point'],
+    default: 'Point',
+  },
+  coordinates: {
+    type: [Number], // [longitude, latitude]
+    default: undefined,
+  },
+  accuracy: Number,
+};
+
 const attendanceSchema = new mongoose.Schema(
   {
     student: {
@@ -24,16 +37,30 @@ const attendanceSchema = new mongoose.Schema(
     checkIn: {
       time: { type: Date },
       geolocation: {
-        type: { type: String, enum: ['Point'], default: 'Point' },
-        coordinates: { type: [Number] }, // [lng, lat]
+        type: {
+          type: String,
+          enum: ['Point'],
+          default: 'Point',
+        },
+        coordinates: {
+          type: [Number],
+          default: undefined,
+        },
         accuracy: Number,
       },
     },
     checkOut: {
       time: { type: Date },
       geolocation: {
-        type: { type: String, enum: ['Point'], default: 'Point' },
-        coordinates: { type: [Number] },
+        type: {
+          type: String,
+          enum: ['Point'],
+          default: 'Point',
+        },
+        coordinates: {
+          type: [Number],
+          default: undefined,
+        },
         accuracy: Number,
       },
     },
@@ -55,17 +82,18 @@ const attendanceSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Index on the date and student — NOT a 2dsphere on the whole checkIn object
 attendanceSchema.index({ student: 1, date: -1 });
 attendanceSchema.index({ student: 1, application: 1 });
-attendanceSchema.index({ checkIn: '2dsphere' });
 
-// Auto-calculate hours worked when both check-in and check-out exist
+// Auto-calculate hours worked
 attendanceSchema.pre('save', function (next) {
   if (this.checkIn?.time && this.checkOut?.time) {
     const diffMs = new Date(this.checkOut.time) - new Date(this.checkIn.time);
     this.hoursWorked = parseFloat((diffMs / (1000 * 60 * 60)).toFixed(2));
+    const checkInHour = new Date(this.checkIn.time).getHours();
     if (this.hoursWorked < 4) this.status = 'half_day';
-    else if (new Date(this.checkIn.time).getHours() > 9) this.status = 'late';
+    else if (checkInHour > 9) this.status = 'late';
     else this.status = 'present';
   }
   next();

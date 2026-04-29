@@ -2,7 +2,22 @@ const Attendance = require('../models/Attendance');
 const Application = require('../models/Application');
 const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
-const { createNotification, logActivity } = require('../utils/createNotification');
+const { logActivity } = require('../utils/createNotification');
+
+// Helper: build a clean geolocation sub-document (no 2dsphere — just stored data)
+const buildGeoDoc = (geolocation) => {
+  if (!geolocation || !Array.isArray(geolocation.coordinates) || geolocation.coordinates.length < 2) {
+    return null;
+  }
+  const [lng, lat] = geolocation.coordinates;
+  if (typeof lng !== 'number' || typeof lat !== 'number') return null;
+
+  return {
+    type: 'Point',
+    coordinates: [lng, lat],
+    accuracy: geolocation.accuracy || null,
+  };
+};
 
 // @desc    Check in for the day
 // @route   POST /api/attendance/checkin
@@ -14,10 +29,12 @@ const checkIn = asyncHandler(async (req, res, next) => {
     student: req.user._id,
     status: 'approved',
   });
+
   if (!application) {
-    return next(new ApiError(404, 'No approved SIWES application found.'));
+    return next(new ApiError(404, 'No approved SIWES application found. Please get your application approved first.'));
   }
 
+  // Check if already checked in today
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const tomorrow = new Date(today);
@@ -32,17 +49,27 @@ const checkIn = asyncHandler(async (req, res, next) => {
     return next(new ApiError(409, 'You have already checked in today.'));
   }
 
+  const geoDoc = buildGeoDoc(geolocation);
+
+  const checkInData = {
+    time: new Date(),
+    ...(geoDoc ? { geolocation: geoDoc } : {}),
+  };
+
   let attendance;
   if (existing) {
-    existing.checkIn = { time: new Date(), geolocation };
+    existing.checkIn = checkInData;
     attendance = await existing.save();
   } else {
+    // Calculate day number from attendance records count
+    const totalDays = await Attendance.countDocuments({ student: req.user._id });
+
     attendance = await Attendance.create({
       student: req.user._id,
       application: application._id,
       date: new Date(),
-      dayNumber: dayNumber || 1,
-      checkIn: { time: new Date(), geolocation },
+      dayNumber: dayNumber || totalDays + 1,
+      checkIn: checkInData,
     });
   }
 
@@ -56,7 +83,7 @@ const checkIn = asyncHandler(async (req, res, next) => {
 
   res.status(200).json({
     success: true,
-    message: 'Checked in successfully.',
+    message: `Checked in successfully at ${new Date().toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}`,
     data: { attendance },
   });
 });
@@ -87,8 +114,14 @@ const checkOut = asyncHandler(async (req, res, next) => {
     return next(new ApiError(409, 'You have already checked out today.'));
   }
 
-  attendance.checkOut = { time: new Date(), geolocation };
-  await attendance.save();
+  const geoDoc = buildGeoDoc(geolocation);
+
+  attendance.checkOut = {
+    time: new Date(),
+    ...(geoDoc ? { geolocation: geoDoc } : {}),
+  };
+
+  await attendance.save(); // pre-save hook calculates hoursWorked
 
   logActivity({
     userId: req.user._id,
@@ -104,7 +137,7 @@ const checkOut = asyncHandler(async (req, res, next) => {
   });
 });
 
-// @desc    Get today's attendance status
+// @desc    Get today's attendance
 // @route   GET /api/attendance/today
 // @access  Student
 const getTodayAttendance = asyncHandler(async (req, res) => {
@@ -120,11 +153,11 @@ const getTodayAttendance = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    data: { attendance },
+    data: { attendance: attendance || null },
   });
 });
 
-// @desc    Get attendance history for student
+// @desc    Get student's attendance history
 // @route   GET /api/attendance
 // @access  Student
 const getMyAttendance = asyncHandler(async (req, res) => {
@@ -161,9 +194,7 @@ const getMyAttendance = asyncHandler(async (req, res) => {
 // @route   GET /api/attendance/student/:studentId
 // @access  Coordinator, Admin
 const getStudentAttendance = asyncHandler(async (req, res) => {
-  const records = await Attendance.find({ student: req.params.studentId })
-    .sort({ date: -1 });
-
+  const records = await Attendance.find({ student: req.params.studentId }).sort({ date: -1 });
   const totalHours = records.reduce((sum, r) => sum + (r.hoursWorked || 0), 0);
 
   res.status(200).json({

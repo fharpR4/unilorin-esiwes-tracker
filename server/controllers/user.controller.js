@@ -1,20 +1,11 @@
 const User = require('../models/User');
+const Application = require('../models/Application');
 const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
+const { createNotification } = require('../utils/createNotification');
 
-// @desc    Get all users (paginated, filterable)
-// @route   GET /api/users
-// @access  Admin
-const getAllUsers = asyncHandler(async (req, res, next) => {
-  const {
-    page = 1,
-    limit = 20,
-    role,
-    isActive,
-    institution,
-    search,
-  } = req.query;
-
+const getAllUsers = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20, role, isActive, institution, search } = req.query;
   const filter = {};
   if (role) filter.role = role;
   if (isActive !== undefined) filter.isActive = isActive === 'true';
@@ -27,7 +18,6 @@ const getAllUsers = asyncHandler(async (req, res, next) => {
       { matricNumber: { $regex: search, $options: 'i' } },
     ];
   }
-
   const skip = (parseInt(page) - 1) * parseInt(limit);
   const total = await User.countDocuments(filter);
   const users = await User.find(filter)
@@ -45,112 +35,54 @@ const getAllUsers = asyncHandler(async (req, res, next) => {
   });
 });
 
-// @desc    Get user by ID
-// @route   GET /api/users/:id
-// @access  Admin
 const getUserById = asyncHandler(async (req, res, next) => {
-  const user = await User.findById(req.params.id).populate('institution', 'name acronym logoUrl');
-
-  if (!user) {
-    return next(new ApiError(404, 'User not found.'));
-  }
-
-  res.status(200).json({
-    success: true,
-    data: { user },
-  });
+  const user = await User.findById(req.params.id)
+    .populate('institution', 'name acronym logoUrl')
+    .populate('assignedStudents.student', 'firstName lastName email matricNumber department level');
+  if (!user) return next(new ApiError(404, 'User not found.'));
+  res.status(200).json({ success: true, data: { user } });
 });
 
-// @desc    Update user
-// @route   PUT /api/users/:id
-// @access  Admin
 const updateUser = asyncHandler(async (req, res, next) => {
-  const {
-    firstName,
-    lastName,
-    phone,
-    courseOfStudy,
-    matricNumber,
-    department,
-    level,
-    institution,
-  } = req.body;
-
   const user = await User.findById(req.params.id);
-  if (!user) {
-    return next(new ApiError(404, 'User not found.'));
-  }
-
-  // Only allow updating non-critical fields via this endpoint
-  if (firstName !== undefined) user.firstName = firstName;
-  if (lastName !== undefined) user.lastName = lastName;
-  if (phone !== undefined) user.phone = phone;
-  if (courseOfStudy !== undefined) user.courseOfStudy = courseOfStudy;
-  if (matricNumber !== undefined) user.matricNumber = matricNumber;
-  if (department !== undefined) user.department = department;
-  if (level !== undefined) user.level = level;
-  if (institution !== undefined) user.institution = institution;
-
+  if (!user) return next(new ApiError(404, 'User not found.'));
+  const allowed = [
+    'firstName', 'lastName', 'phone', 'courseOfStudy', 'matricNumber', 'department', 'level', 'institution',
+    'faculty', 'supervisorDepartment', 'supervisorInstitution', 'staffId', 'title',
+  ];
+  allowed.forEach((f) => { if (req.body[f] !== undefined) user[f] = req.body[f]; });
   await user.save();
-
-  res.status(200).json({
-    success: true,
-    message: 'User updated successfully.',
-    data: { user },
-  });
+  res.status(200).json({ success: true, message: 'User updated.', data: { user } });
 });
 
-// @desc    Deactivate user account
-// @route   PATCH /api/users/:id/deactivate
-// @access  Admin
 const deactivateUser = asyncHandler(async (req, res, next) => {
   const user = await User.findById(req.params.id);
-
   if (!user) return next(new ApiError(404, 'User not found.'));
-
   if (user._id.toString() === req.user._id.toString()) {
     return next(new ApiError(400, 'You cannot deactivate your own account.'));
   }
-
   user.isActive = false;
   await user.save();
-
-  res.status(200).json({
-    success: true,
-    message: `Account for ${user.email} has been deactivated.`,
-    data: { user },
-  });
+  res.status(200).json({ success: true, message: 'Account deactivated.', data: { user } });
 });
 
-// @desc    Reactivate user account
-// @route   PATCH /api/users/:id/reactivate
-// @access  Admin
 const reactivateUser = asyncHandler(async (req, res, next) => {
   const user = await User.findById(req.params.id);
-
   if (!user) return next(new ApiError(404, 'User not found.'));
-
   user.isActive = true;
   await user.save();
-
-  res.status(200).json({
-    success: true,
-    message: `Account for ${user.email} has been reactivated.`,
-    data: { user },
-  });
+  res.status(200).json({ success: true, message: 'Account reactivated.', data: { user } });
 });
 
-// @desc    Get all students for a coordinator's institution
-// @route   GET /api/users/students
-// @access  Coordinator
-const getStudents = asyncHandler(async (req, res, next) => {
-  const { page = 1, limit = 20, search } = req.query;
+// For coordinator/admin — students in their institution
+const getStudents = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20, search, department } = req.query;
+  const filter = { role: 'student', isActive: true };
 
-  const filter = {
-    role: 'student',
-    institution: req.user.institution,
-    isActive: true,
-  };
+  // Coordinators see only their institution's students
+  if (req.user.role === 'coordinator' && req.user.institution) {
+    filter.institution = req.user.institution;
+  }
 
   if (search) {
     filter.$or = [
@@ -160,11 +92,13 @@ const getStudents = asyncHandler(async (req, res, next) => {
       { email: { $regex: search, $options: 'i' } },
     ];
   }
+  if (department) filter.department = { $regex: department, $options: 'i' };
 
   const skip = (parseInt(page) - 1) * parseInt(limit);
   const total = await User.countDocuments(filter);
   const students = await User.find(filter)
     .select('-password')
+    .populate('institution', 'name acronym')
     .sort({ lastName: 1, firstName: 1 })
     .skip(skip)
     .limit(parseInt(limit));
@@ -178,12 +112,74 @@ const getStudents = asyncHandler(async (req, res, next) => {
   });
 });
 
-// @desc    Get all supervisors
-// @route   GET /api/users/supervisors
-// @access  Coordinator
-const getSupervisors = asyncHandler(async (req, res, next) => {
-  const supervisors = await User.find({ role: 'supervisor', isActive: true })
-    .select('firstName lastName email phone')
+// For supervisors to browse students and pick who to assign
+// Filters by institution name if provided, by department, or shows all
+const getStudentsForSupervisor = asyncHandler(async (req, res) => {
+  const { search, institution, department, page = 1, limit = 30 } = req.query;
+  const filter = { role: 'student', isActive: true };
+
+  // Filter by institution name/id if provided
+  if (institution) {
+    // Try to match institution by ID or by name search
+    const Institution = require('../models/Institution');
+    const inst = await Institution.findOne({
+      $or: [
+        { _id: institution.match(/^[a-f\d]{24}$/i) ? institution : null },
+        { name: { $regex: institution, $options: 'i' } },
+        { acronym: { $regex: institution, $options: 'i' } },
+      ].filter(Boolean),
+    });
+    if (inst) filter.institution = inst._id;
+  }
+
+  if (department) filter.department = { $regex: department, $options: 'i' };
+
+  if (search) {
+    filter.$or = [
+      { firstName: { $regex: search, $options: 'i' } },
+      { lastName: { $regex: search, $options: 'i' } },
+      { matricNumber: { $regex: search, $options: 'i' } },
+      { email: { $regex: search, $options: 'i' } },
+      { courseOfStudy: { $regex: search, $options: 'i' } },
+    ];
+  }
+
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const total = await User.countDocuments(filter);
+  const students = await User.find(filter)
+    .select('firstName lastName email matricNumber department level courseOfStudy institution')
+    .populate('institution', 'name acronym')
+    .sort({ lastName: 1, firstName: 1 })
+    .skip(skip)
+    .limit(parseInt(limit));
+
+  res.status(200).json({
+    success: true,
+    count: total,
+    page: parseInt(page),
+    pages: Math.ceil(total / parseInt(limit)),
+    data: { students },
+  });
+});
+
+// Get supervisors — with full profile info for student selection
+const getSupervisors = asyncHandler(async (req, res) => {
+  const { faculty, department, institution, search } = req.query;
+  const filter = { role: 'supervisor', isActive: true };
+  if (faculty) filter.faculty = { $regex: faculty, $options: 'i' };
+  if (department) filter.supervisorDepartment = { $regex: department, $options: 'i' };
+  if (institution) filter.supervisorInstitution = { $regex: institution, $options: 'i' };
+  if (search) {
+    filter.$or = [
+      { firstName: { $regex: search, $options: 'i' } },
+      { lastName: { $regex: search, $options: 'i' } },
+      { email: { $regex: search, $options: 'i' } },
+      { staffId: { $regex: search, $options: 'i' } },
+    ];
+  }
+
+  const supervisors = await User.find(filter)
+    .select('firstName lastName email phone faculty supervisorDepartment supervisorInstitution staffId title assignedStudents')
     .sort({ lastName: 1, firstName: 1 });
 
   res.status(200).json({
@@ -191,6 +187,74 @@ const getSupervisors = asyncHandler(async (req, res, next) => {
     count: supervisors.length,
     data: { supervisors },
   });
+});
+
+// Get students assigned to this supervisor (both via applications and manual)
+const getMyAssignedStudents = asyncHandler(async (req, res) => {
+  const supervisor = await User.findById(req.user._id)
+    .populate('assignedStudents.student', 'firstName lastName email matricNumber department level courseOfStudy');
+
+  const manualAssigned = (supervisor.assignedStudents || []).filter((a) => a.student);
+
+  // Also get students with approved applications pointing to this supervisor
+  const appStudents = await Application.find({ supervisor: req.user._id, status: 'approved' })
+    .populate('student', 'firstName lastName email matricNumber department level courseOfStudy')
+    .populate('institution', 'name acronym');
+
+  // Avoid duplicates
+  const appStudentIds = new Set(appStudents.map((a) => a.student?._id?.toString()).filter(Boolean));
+  const onlyManual = manualAssigned.filter((as) => !appStudentIds.has(as.student?._id?.toString()));
+
+  res.status(200).json({
+    success: true,
+    data: {
+      applicationStudents: appStudents.map((a) => ({
+        ...a.student.toObject(),
+        applicationId: a._id,
+        organizationName: a.organizationName,
+      })),
+      manualStudents: onlyManual.map((as) => as.student),
+      total: appStudents.length + onlyManual.length,
+    },
+  });
+});
+
+// Supervisor manually adds a student to their list
+const assignStudentToSelf = asyncHandler(async (req, res, next) => {
+  const { studentId } = req.body;
+  if (!studentId) return next(new ApiError(400, 'studentId is required.'));
+
+  const supervisor = await User.findById(req.user._id);
+  const student = await User.findOne({ _id: studentId, role: 'student', isActive: true });
+  if (!student) return next(new ApiError(404, 'Student not found.'));
+
+  const already = supervisor.assignedStudents.some(
+    (a) => a.student.toString() === studentId.toString()
+  );
+  if (!already) {
+    supervisor.assignedStudents.push({ student: studentId });
+    await supervisor.save();
+  }
+
+  await createNotification({
+    recipientId: studentId,
+    type: 'system',
+    title: 'Supervisor Assignment',
+    message: `${supervisor.title ? supervisor.title + ' ' : ''}${supervisor.firstName} ${supervisor.lastName} has added you as an assigned student.`,
+    link: '/applications',
+  });
+
+  res.status(200).json({ success: true, message: 'Student assigned successfully.' });
+});
+
+// Remove a manually assigned student
+const removeAssignedStudent = asyncHandler(async (req, res) => {
+  const supervisor = await User.findById(req.user._id);
+  supervisor.assignedStudents = supervisor.assignedStudents.filter(
+    (a) => a.student.toString() !== req.params.studentId
+  );
+  await supervisor.save();
+  res.status(200).json({ success: true, message: 'Student removed from your list.' });
 });
 
 module.exports = {
@@ -201,4 +265,8 @@ module.exports = {
   reactivateUser,
   getStudents,
   getSupervisors,
+  getStudentsForSupervisor,
+  getMyAssignedStudents,
+  assignStudentToSelf,
+  removeAssignedStudent,
 };

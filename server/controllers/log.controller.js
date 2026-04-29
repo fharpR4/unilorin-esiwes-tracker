@@ -2,25 +2,17 @@ const Log = require('../models/Log');
 const Application = require('../models/Application');
 const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
+const { createNotification, logActivity } = require('../utils/createNotification');
 
 // @desc    Create a new daily log
 // @route   POST /api/logs
 // @access  Student
 const createLog = asyncHandler(async (req, res, next) => {
   const {
-    applicationId,
-    dateOfActivity,
-    dayNumber,
-    title,
-    description,
-    skillsLearned,
-    challenges,
-    portraitImage,
-    environmentImage,
-    geolocation,
+    applicationId, dateOfActivity, dayNumber, title, description,
+    skillsLearned, challenges, portraitImage, environmentImage, geolocation,
   } = req.body;
 
-  // Verify application belongs to this student and is approved
   const application = await Application.findOne({
     _id: applicationId,
     student: req.user._id,
@@ -28,7 +20,7 @@ const createLog = asyncHandler(async (req, res, next) => {
   });
 
   if (!application) {
-    return next(new ApiError(404, 'Active approved SIWES application not found. You must have an approved application before submitting logs.'));
+    return next(new ApiError(404, 'Active approved SIWES application not found. You must have an approved application to submit logs.'));
   }
 
   // Prevent duplicate day numbers per application
@@ -39,7 +31,7 @@ const createLog = asyncHandler(async (req, res, next) => {
   });
 
   if (existingLog) {
-    return next(new ApiError(409, `A log for Day ${dayNumber} already exists for this application.`));
+    return next(new ApiError(409, `A log entry for Day ${dayNumber} already exists for this application.`));
   }
 
   const log = await Log.create({
@@ -52,14 +44,8 @@ const createLog = asyncHandler(async (req, res, next) => {
     description,
     skillsLearned: Array.isArray(skillsLearned) ? skillsLearned : [],
     challenges,
-    portraitImage: {
-      data: portraitImage,
-      capturedAt: new Date(),
-    },
-    environmentImage: {
-      data: environmentImage,
-      capturedAt: new Date(),
-    },
+    portraitImage: { data: portraitImage, capturedAt: new Date() },
+    environmentImage: { data: environmentImage, capturedAt: new Date() },
     geolocation: {
       type: 'Point',
       coordinates: geolocation.coordinates,
@@ -72,6 +58,26 @@ const createLog = asyncHandler(async (req, res, next) => {
     },
   });
 
+  // Notify the assigned supervisor
+  await createNotification({
+    recipientId: application.supervisor,
+    type: 'log_submitted',
+    title: 'New Log Entry Submitted',
+    message: `${req.user.firstName} ${req.user.lastName} submitted Day ${dayNumber} log: "${title}". Please review.`,
+    link: `/logs/${log._id}`,
+    relatedId: log._id,
+    relatedModel: 'Log',
+  });
+
+  logActivity({
+    userId: req.user._id,
+    action: 'LOG_SUBMITTED',
+    entity: 'Log',
+    entityId: log._id,
+    ipAddress: req.ip,
+  });
+
+  // Return without image data in the list response for performance
   const populatedLog = await Log.findById(log._id)
     .select('-portraitImage.data -environmentImage.data')
     .populate('student', 'firstName lastName matricNumber')
@@ -79,7 +85,7 @@ const createLog = asyncHandler(async (req, res, next) => {
 
   res.status(201).json({
     success: true,
-    message: 'Log submitted successfully. Awaiting supervisor approval.',
+    message: 'Log submitted successfully. Your supervisor has been notified.',
     data: { log: populatedLog },
   });
 });
@@ -87,7 +93,7 @@ const createLog = asyncHandler(async (req, res, next) => {
 // @desc    Get all logs for the authenticated student
 // @route   GET /api/logs
 // @access  Student
-const getMyLogs = asyncHandler(async (req, res, next) => {
+const getMyLogs = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20, status, applicationId } = req.query;
 
   const filter = { student: req.user._id };
@@ -113,20 +119,21 @@ const getMyLogs = asyncHandler(async (req, res, next) => {
   });
 });
 
-// @desc    Get single log by ID
+// @desc    Get single log by ID — ALWAYS includes images for all authorised roles
 // @route   GET /api/logs/:id
 // @access  Student (own), Supervisor (assigned), Coordinator, Admin
 const getLogById = asyncHandler(async (req, res, next) => {
+  const { role, _id } = req.user;
+
+  // NO .select() exclusion here — images are always returned on the detail view
   const log = await Log.findById(req.params.id)
-    .populate('student', 'firstName lastName email matricNumber courseOfStudy')
-    .populate('supervisor', 'firstName lastName email')
-    .populate('application', 'organizationName startDate expectedEndDate');
+    .populate('student', 'firstName lastName email matricNumber courseOfStudy department level')
+    .populate('supervisor', 'firstName lastName email phone')
+    .populate('application', 'organizationName startDate expectedEndDate totalDaysRequired');
 
   if (!log) {
     return next(new ApiError(404, 'Log not found.'));
   }
-
-  const { role, _id } = req.user;
 
   // Students can only view their own logs
   if (role === 'student' && log.student._id.toString() !== _id.toString()) {
@@ -144,38 +151,50 @@ const getLogById = asyncHandler(async (req, res, next) => {
   });
 });
 
+// @desc    Get log images separately (for coordinator/admin — lightweight endpoint)
+// @route   GET /api/logs/:id/images
+// @access  Coordinator, Admin
+const getLogImages = asyncHandler(async (req, res, next) => {
+  const log = await Log.findById(req.params.id)
+    .select('portraitImage environmentImage student supervisor');
+
+  if (!log) {
+    return next(new ApiError(404, 'Log not found.'));
+  }
+
+  // Coordinator and admin can view any log's images
+  res.status(200).json({
+    success: true,
+    data: {
+      portraitImage: log.portraitImage,
+      environmentImage: log.environmentImage,
+      studentId: log.student,
+      supervisorId: log.supervisor,
+    },
+  });
+});
+
 // @desc    Update a pending or rejected log (resubmit)
 // @route   PUT /api/logs/:id
 // @access  Student (own)
 const updateLog = asyncHandler(async (req, res, next) => {
   const log = await Log.findOne({ _id: req.params.id, student: req.user._id });
 
-  if (!log) {
-    return next(new ApiError(404, 'Log not found.'));
-  }
+  if (!log) return next(new ApiError(404, 'Log not found.'));
 
   if (!['pending', 'rejected'].includes(log.status)) {
-    return next(new ApiError(400, `Cannot edit a log with status '${log.status}'. Only pending or rejected logs can be updated.`));
+    return next(new ApiError(400, `Cannot edit a log with status '${log.status}'.`));
   }
 
-  const allowedFields = [
-    'title', 'description', 'skillsLearned', 'challenges',
-    'dateOfActivity', 'portraitImage', 'environmentImage', 'geolocation',
-  ];
-
-  allowedFields.forEach((field) => {
+  const allowed = ['title', 'description', 'skillsLearned', 'challenges', 'dateOfActivity', 'portraitImage', 'environmentImage', 'geolocation'];
+  allowed.forEach((field) => {
     if (req.body[field] !== undefined) {
       if (field === 'portraitImage') {
         log.portraitImage = { data: req.body[field], capturedAt: new Date() };
       } else if (field === 'environmentImage') {
         log.environmentImage = { data: req.body[field], capturedAt: new Date() };
       } else if (field === 'geolocation') {
-        log.geolocation = {
-          type: 'Point',
-          coordinates: req.body[field].coordinates,
-          accuracy: req.body[field].accuracy || null,
-          capturedAt: new Date(),
-        };
+        log.geolocation = { type: 'Point', coordinates: req.body[field].coordinates, accuracy: req.body[field].accuracy || null, capturedAt: new Date() };
       } else {
         log[field] = req.body[field];
       }
@@ -185,15 +204,24 @@ const updateLog = asyncHandler(async (req, res, next) => {
   if (log.status === 'rejected') {
     log.status = 'resubmitted';
     log.resubmittedAt = new Date();
+
+    // Notify supervisor on resubmission
+    await createNotification({
+      recipientId: log.supervisor,
+      type: 'log_resubmitted',
+      title: 'Log Resubmitted',
+      message: `${req.user.firstName} ${req.user.lastName} resubmitted Day ${log.dayNumber} log: "${log.title}".`,
+      link: `/logs/${log._id}`,
+      relatedId: log._id,
+      relatedModel: 'Log',
+    });
   }
 
   await log.save();
 
   res.status(200).json({
     success: true,
-    message: log.status === 'resubmitted'
-      ? 'Log resubmitted successfully. Awaiting supervisor review.'
-      : 'Log updated successfully.',
+    message: log.status === 'resubmitted' ? 'Log resubmitted. Supervisor notified.' : 'Log updated.',
     data: { log },
   });
 });
@@ -203,21 +231,10 @@ const updateLog = asyncHandler(async (req, res, next) => {
 // @access  Student (own)
 const deleteLog = asyncHandler(async (req, res, next) => {
   const log = await Log.findOne({ _id: req.params.id, student: req.user._id });
-
-  if (!log) {
-    return next(new ApiError(404, 'Log not found.'));
-  }
-
-  if (log.status !== 'pending') {
-    return next(new ApiError(400, `Cannot delete a log with status '${log.status}'. Only pending logs can be deleted.`));
-  }
-
+  if (!log) return next(new ApiError(404, 'Log not found.'));
+  if (log.status !== 'pending') return next(new ApiError(400, 'Only pending logs can be deleted.'));
   await log.deleteOne();
-
-  res.status(200).json({
-    success: true,
-    message: 'Log deleted successfully.',
-  });
+  res.status(200).json({ success: true, message: 'Log deleted.' });
 });
 
 // @desc    Approve a log
@@ -225,18 +242,10 @@ const deleteLog = asyncHandler(async (req, res, next) => {
 // @access  Supervisor
 const approveLog = asyncHandler(async (req, res, next) => {
   const { comment } = req.body;
-
-  const log = await Log.findOne({
-    _id: req.params.id,
-    supervisor: req.user._id,
-  });
-
-  if (!log) {
-    return next(new ApiError(404, 'Log not found or not assigned to you.'));
-  }
-
+  const log = await Log.findOne({ _id: req.params.id, supervisor: req.user._id });
+  if (!log) return next(new ApiError(404, 'Log not found or not assigned to you.'));
   if (!['pending', 'resubmitted'].includes(log.status)) {
-    return next(new ApiError(400, `Log is already '${log.status}'. Only pending or resubmitted logs can be approved.`));
+    return next(new ApiError(400, `Log is already '${log.status}'.`));
   }
 
   log.status = 'approved';
@@ -244,11 +253,20 @@ const approveLog = asyncHandler(async (req, res, next) => {
   log.approvedAt = new Date();
   await log.save();
 
-  res.status(200).json({
-    success: true,
-    message: 'Log approved successfully.',
-    data: { log },
+  // Notify student
+  await createNotification({
+    recipientId: log.student,
+    type: 'log_approved',
+    title: 'Log Approved',
+    message: `Your Day ${log.dayNumber} log "${log.title}" has been approved by your supervisor.`,
+    link: `/logs/${log._id}`,
+    relatedId: log._id,
+    relatedModel: 'Log',
   });
+
+  logActivity({ userId: req.user._id, action: 'LOG_APPROVED', entity: 'Log', entityId: log._id });
+
+  res.status(200).json({ success: true, message: 'Log approved. Student notified.', data: { log } });
 });
 
 // @desc    Reject a log
@@ -256,18 +274,10 @@ const approveLog = asyncHandler(async (req, res, next) => {
 // @access  Supervisor
 const rejectLog = asyncHandler(async (req, res, next) => {
   const { rejectionReason } = req.body;
-
-  const log = await Log.findOne({
-    _id: req.params.id,
-    supervisor: req.user._id,
-  });
-
-  if (!log) {
-    return next(new ApiError(404, 'Log not found or not assigned to you.'));
-  }
-
+  const log = await Log.findOne({ _id: req.params.id, supervisor: req.user._id });
+  if (!log) return next(new ApiError(404, 'Log not found or not assigned to you.'));
   if (!['pending', 'resubmitted'].includes(log.status)) {
-    return next(new ApiError(400, `Log is already '${log.status}'. Only pending or resubmitted logs can be rejected.`));
+    return next(new ApiError(400, `Log is already '${log.status}'.`));
   }
 
   log.status = 'rejected';
@@ -275,25 +285,30 @@ const rejectLog = asyncHandler(async (req, res, next) => {
   log.supervisorComment = '';
   await log.save();
 
-  res.status(200).json({
-    success: true,
-    message: 'Log rejected. The student will be notified to resubmit.',
-    data: { log },
+  // Notify student
+  await createNotification({
+    recipientId: log.student,
+    type: 'log_rejected',
+    title: 'Log Rejected',
+    message: `Your Day ${log.dayNumber} log "${log.title}" was rejected. Reason: ${rejectionReason}`,
+    link: `/logs/${log._id}`,
+    relatedId: log._id,
+    relatedModel: 'Log',
   });
+
+  logActivity({ userId: req.user._id, action: 'LOG_REJECTED', entity: 'Log', entityId: log._id });
+
+  res.status(200).json({ success: true, message: 'Log rejected. Student notified.', data: { log } });
 });
 
-// @desc    Get pending logs for supervisor's approval queue
+// @desc    Get pending logs for supervisor queue
 // @route   GET /api/logs/pending
 // @access  Supervisor
-const getPendingLogs = asyncHandler(async (req, res, next) => {
+const getPendingLogs = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20 } = req.query;
   const skip = (parseInt(page) - 1) * parseInt(limit);
 
-  const filter = {
-    supervisor: req.user._id,
-    status: { $in: ['pending', 'resubmitted'] },
-  };
-
+  const filter = { supervisor: req.user._id, status: { $in: ['pending', 'resubmitted'] } };
   const total = await Log.countDocuments(filter);
   const logs = await Log.find(filter)
     .select('-portraitImage.data -environmentImage.data')
@@ -302,25 +317,18 @@ const getPendingLogs = asyncHandler(async (req, res, next) => {
     .skip(skip)
     .limit(parseInt(limit));
 
-  res.status(200).json({
-    success: true,
-    count: total,
-    page: parseInt(page),
-    pages: Math.ceil(total / parseInt(limit)),
-    data: { logs },
-  });
+  res.status(200).json({ success: true, count: total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)), data: { logs } });
 });
 
-// @desc    Get all logs for a specific student (coordinator view)
+// @desc    Get all logs for a specific student (coordinator/admin)
 // @route   GET /api/logs/student/:studentId
 // @access  Coordinator, Admin
-const getStudentLogs = asyncHandler(async (req, res, next) => {
+const getStudentLogs = asyncHandler(async (req, res) => {
   const { page = 1, limit = 50, status } = req.query;
-  const skip = (parseInt(page) - 1) * parseInt(limit);
-
   const filter = { student: req.params.studentId };
   if (status) filter.status = status;
 
+  const skip = (parseInt(page) - 1) * parseInt(limit);
   const total = await Log.countDocuments(filter);
   const logs = await Log.find(filter)
     .select('-portraitImage.data -environmentImage.data')
@@ -330,50 +338,20 @@ const getStudentLogs = asyncHandler(async (req, res, next) => {
     .skip(skip)
     .limit(parseInt(limit));
 
-  res.status(200).json({
-    success: true,
-    count: total,
-    page: parseInt(page),
-    pages: Math.ceil(total / parseInt(limit)),
-    data: { logs },
-  });
+  res.status(200).json({ success: true, count: total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)), data: { logs } });
 });
 
-// @desc    Get logs with images for a specific log (coordinator/admin)
-// @route   GET /api/logs/:id/images
-// @access  Coordinator, Admin
-const getLogImages = asyncHandler(async (req, res, next) => {
-  const log = await Log.findById(req.params.id)
-    .select('portraitImage environmentImage student geolocation dateOfActivity dayNumber')
-    .populate('student', 'firstName lastName matricNumber');
-
-  if (!log) {
-    return next(new ApiError(404, 'Log not found.'));
-  }
-
-  res.status(200).json({
-    success: true,
-    data: { log },
-  });
-});
-
-// @desc    Find logs within a geographic radius
-// @route   GET /api/logs/nearby?lat=8.49&lng=4.67&radius=5000
+// @desc    Get nearby logs
+// @route   GET /api/logs/nearby
 // @access  Coordinator, Admin
 const getNearbyLogs = asyncHandler(async (req, res, next) => {
   const { lat, lng, radius = 5000 } = req.query;
-
-  if (!lat || !lng) {
-    return next(new ApiError(400, 'Latitude (lat) and longitude (lng) query parameters are required.'));
-  }
+  if (!lat || !lng) return next(new ApiError(400, 'lat and lng are required.'));
 
   const logs = await Log.find({
     geolocation: {
       $near: {
-        $geometry: {
-          type: 'Point',
-          coordinates: [parseFloat(lng), parseFloat(lat)],
-        },
+        $geometry: { type: 'Point', coordinates: [parseFloat(lng), parseFloat(lat)] },
         $maxDistance: parseInt(radius),
       },
     },
@@ -382,23 +360,19 @@ const getNearbyLogs = asyncHandler(async (req, res, next) => {
     .populate('student', 'firstName lastName matricNumber')
     .limit(100);
 
-  res.status(200).json({
-    success: true,
-    count: logs.length,
-    data: { logs },
-  });
+  res.status(200).json({ success: true, count: logs.length, data: { logs } });
 });
 
 module.exports = {
   createLog,
   getMyLogs,
   getLogById,
+  getLogImages,
   updateLog,
   deleteLog,
   approveLog,
   rejectLog,
   getPendingLogs,
   getStudentLogs,
-  getLogImages,
   getNearbyLogs,
 };
