@@ -36,6 +36,7 @@ const NAV_ITEMS = {
   ],
   [ROLES.COORDINATOR]: [
     { href: '/dashboard/coordinator', icon: LayoutDashboard, label: 'Dashboard' },
+    { href: '/applications/manage', icon: FileCheck, label: 'Applications' },  // ADD THIS LINE
     { href: '/students', icon: Users, label: 'All Students' },
     { href: '/projects', icon: FolderGit2, label: 'All Projects' },
     { href: '/analytics', icon: BarChart3, label: 'Analytics' },

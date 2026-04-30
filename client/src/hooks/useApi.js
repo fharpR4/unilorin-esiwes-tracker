@@ -2,33 +2,34 @@ import useSWR from 'swr';
 import api from '@/lib/api';
 
 /**
- * The API returns: { success: true, data: { ... }, count, page, pages }
- * This hook returns the FULL response object so components can access
- * data.logs, data.students, data.attendance, data.records, etc.
- * as well as top-level count, page, unreadCount etc.
+ * Fetches data from the API and returns the FULL response object.
+ *
+ * API always returns: { success, data: { FIELD }, count?, page?, unreadCount? }
+ *
+ * Usage in components:
+ *   const { data, isLoading } = useApi('/logs');
+ *   const logs = data?.data?.logs || [];
+ *   const total = data?.count || 0;
+ *
+ * For notifications:
+ *   const unread = data?.unreadCount || 0;
+ *   const notifications = data?.data?.notifications || [];
  */
-const fetcher = async (url) => {
-  const response = await api.get(url);
-  return response.data; // Returns the full { success, data, count, page, unreadCount, ... }
-};
+const fetcher = (url) => api.get(url).then((res) => res.data);
 
 const useApi = (url, options = {}) => {
-  const { data: response, error, isLoading, mutate } = useSWR(
+  const { data, error, isLoading, mutate } = useSWR(
     url || null,
     fetcher,
     {
       revalidateOnFocus: false,
-      dedupingInterval: 5000,
+      dedupingInterval: 3000,
+      errorRetryCount: 2,
       ...options,
     }
   );
 
-  return {
-    data: response,        // Full response — access as data?.data?.logs, data?.count etc.
-    error,
-    isLoading,
-    mutate,
-  };
+  return { data, error, isLoading, mutate };
 };
 
 export default useApi;
