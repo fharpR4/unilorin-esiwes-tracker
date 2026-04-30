@@ -3,7 +3,16 @@ const ActivityLog = require('../models/ActivityLog');
 
 /**
  * Creates an in-app notification for a user.
- * Fire-and-forget — errors are swallowed so they never break the main request.
+ * Always fire-and-forget — errors are logged but never crash the main request.
+ *
+ * @param {Object} options
+ * @param {string|ObjectId} options.recipientId - The user who receives the notification
+ * @param {string} options.type - Notification type
+ * @param {string} options.title - Short title
+ * @param {string} options.message - Full message text
+ * @param {string} [options.link] - Frontend route to navigate to on click
+ * @param {string|ObjectId} [options.relatedId] - ID of related document
+ * @param {string} [options.relatedModel] - Model name of related document
  */
 const createNotification = async ({
   recipientId,
@@ -14,24 +23,30 @@ const createNotification = async ({
   relatedId = null,
   relatedModel = null,
 }) => {
+  if (!recipientId || !type || !title || !message) {
+    console.warn('[createNotification] Missing required fields — skipping.');
+    return;
+  }
+
   try {
-    await Notification.create({
+    const notification = await Notification.create({
       recipient: recipientId,
       type,
       title,
       message,
       link,
-      relatedId,
-      relatedModel,
+      relatedId: relatedId || undefined,
+      relatedModel: relatedModel || undefined,
     });
+    return notification;
   } catch (err) {
-    console.error('Failed to create notification:', err.message);
+    console.error('[createNotification] Failed to create notification:', err.message);
   }
 };
 
 /**
  * Logs a system activity for audit purposes.
- * Fire-and-forget.
+ * Always fire-and-forget.
  */
 const logActivity = async ({
   userId,
@@ -43,19 +58,21 @@ const logActivity = async ({
   ipAddress = '',
   userAgent = '',
 }) => {
+  if (!action) return;
+
   try {
     await ActivityLog.create({
-      user: userId,
+      user: userId || undefined,
       action,
       description,
-      entity,
-      entityId,
-      metadata,
+      entity: entity || undefined,
+      entityId: entityId || undefined,
+      metadata: metadata || undefined,
       ipAddress,
       userAgent,
     });
   } catch (err) {
-    console.error('Failed to log activity:', err.message);
+    console.error('[logActivity] Failed to log activity:', err.message);
   }
 };
 

@@ -2,27 +2,32 @@ const express = require('express');
 const router = express.Router();
 const {
   getAllUsers, getUserById, updateUser, deactivateUser, reactivateUser,
-  getStudents, getSupervisors, getMyAssignedStudents, assignStudentToSelf, removeAssignedStudent,
-  getStudentsForSupervisor,
+  getStudents, getSupervisors, getStudentsForSupervisor,
+  getMyAssignedStudents, assignStudentToSelf, removeAssignedStudent,
 } = require('../controllers/user.controller');
 const { protect } = require('../middleware/auth');
 const { authorize } = require('../middleware/roles');
 const validate = require('../middleware/validate');
 const { updateUserValidation } = require('../validators/user.validator');
 
+// PUBLIC — supervisors list needed for application submission (no auth)
+// We expose a lighter version without auth for the application form
+router.get('/supervisors-public', getSupervisors); // used by registration & application pages
+
+// All routes below require auth
 router.use(protect);
 
-// Supervisor-specific routes
+// Supervisor routes
 router.get('/my-students', authorize('supervisor'), getMyAssignedStudents);
 router.post('/assign-student', authorize('supervisor'), assignStudentToSelf);
 router.delete('/assigned-students/:studentId', authorize('supervisor'), removeAssignedStudent);
-// Supervisors browse students to assign (filtered by institution/faculty)
 router.get('/students-for-assignment', authorize('supervisor'), getStudentsForSupervisor);
+
+// Authenticated supervisor list (with more detail)
+router.get('/supervisors', authorize('student', 'coordinator', 'admin', 'supervisor'), getSupervisors);
 
 // Coordinator + Admin
 router.get('/students', authorize('coordinator', 'admin'), getStudents);
-// Students can also call getSupervisors (they need to pick one during application)
-router.get('/supervisors', authorize('student', 'coordinator', 'admin', 'supervisor'), getSupervisors);
 
 // Admin only
 router.get('/', authorize('admin'), getAllUsers);

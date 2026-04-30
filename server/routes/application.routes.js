@@ -12,8 +12,13 @@ const { authorize } = require('../middleware/roles');
 
 router.use(protect);
 
-router.post('/', authorize('student'), submitApplication);
+// Specific routes first
 router.get('/mine', authorize('student'), getMyApplications);
+
+// Student submits
+router.post('/', authorize('student'), submitApplication);
+
+// Coordinator/Admin views and acts
 router.get('/', authorize('coordinator', 'admin'), getAllApplications);
 router.patch('/:id/approve', authorize('coordinator', 'admin'), approveApplication);
 router.patch('/:id/reject', authorize('coordinator', 'admin'), rejectApplication);
