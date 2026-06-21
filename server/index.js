@@ -39,13 +39,16 @@ app.get('/debug/projects', async (req, res) => {
   try {
     const Project = require('./models/Project');
     const Application = require('./models/Application');
+    const User = require('./models/User');
 
     const projects = await Project.find({}).lean();
     const approvedApps = await Application.find({ status: 'approved' }).lean();
+    const supervisors = await User.find({ role: 'supervisor' }).select('_id firstName lastName email isActive').lean();
 
     res.json({
       totalProjects: projects.length,
       totalApprovedApps: approvedApps.length,
+      allSupervisorsInDB: supervisors,
       projects: projects.map(p => ({
         _id: p._id,
         title: p.title,
