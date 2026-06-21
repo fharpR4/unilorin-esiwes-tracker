@@ -1,13 +1,8 @@
 const rateLimit = require('express-rate-limit');
 
-/**
- * General API rate limiter.
- * Applies to all routes — prevents abuse and DDoS.
- * 100 requests per 15 minutes per IP.
- */
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 500,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -16,14 +11,9 @@ const generalLimiter = rateLimit({
   },
 });
 
-/**
- * Strict auth rate limiter.
- * Applied only to login, register, and password reset endpoints.
- * 10 requests per 15 minutes per IP.
- */
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -33,13 +23,9 @@ const authLimiter = rateLimit({
   skipSuccessfulRequests: true,
 });
 
-/**
- * Password reset specific limiter.
- * 5 requests per hour per IP.
- */
 const passwordResetLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  max: 5,
+  max: 10,
   standardHeaders: true,
   legacyHeaders: false,
   message: {

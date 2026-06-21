@@ -14,7 +14,6 @@ import useApi from '@/hooks/useApi';
 import api from '@/lib/api';
 import { ROLES } from '@/lib/constants';
 
-// MOVED OUTSIDE — prevents re-creation on every render
 const Step = ({ number, title, done, children }) => (
   <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
     <div className="flex items-center gap-3 mb-4">
@@ -33,7 +32,9 @@ export default function NewLogPage() {
   const { toast } = useToast();
   const { location, error: geoError, loading: geoLoading, getPosition } = useGeolocation();
   const { data: appsData } = useApi('/applications/mine');
-  const approvedApp = appsData?.applications?.find((a) => a.status === 'approved');
+
+  // FIX: was appsData?.applications — missing the .data layer
+  const approvedApp = appsData?.data?.applications?.find((a) => a.status === 'approved');
 
   const [form, setForm] = useState({ title: '', description: '', challenges: '', dayNumber: '' });
   const [skills, setSkills] = useState([]);
@@ -99,7 +100,6 @@ export default function NewLogPage() {
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4 max-w-2xl mx-auto">
-            {/* Step 1: Location */}
             <Step number="1" title="Capture Your Location" done={!!location}>
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
                 Your GPS coordinates are required to verify your attendance at your training location.
@@ -126,28 +126,31 @@ export default function NewLogPage() {
               )}
             </Step>
 
-            {/* Step 2: Portrait */}
             <Step number="2" title="Portrait Headshot" done={!!portraitImage}>
               <CameraCapture requiredType="portrait" onCapture={setPortraitImage} confirmed={!!portraitImage} />
             </Step>
 
-            {/* Step 3: Environment */}
             <Step number="3" title="Training Environment Photo" done={!!environmentImage}>
               <CameraCapture requiredType="environment" onCapture={setEnvironmentImage} confirmed={!!environmentImage} />
             </Step>
 
-            {/* Step 4: Log Details */}
             <Step number="4" title="Log Details" done={!!(form.title && form.description.length >= 50 && form.dayNumber)}>
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Day Number <span className="text-red-500">*</span></label>
-                    <input type="number" name="dayNumber" value={form.dayNumber} onChange={handleChange} min="1" max="365" required placeholder="e.g. 23"
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                      Day Number <span className="text-red-500">*</span>
+                    </label>
+                    <input type="number" name="dayNumber" value={form.dayNumber} onChange={handleChange}
+                      min="1" max="365" required placeholder="e.g. 23"
                       className="w-full px-3 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-unilorin-primary dark:focus:ring-blue-500 transition" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Log Title <span className="text-red-500">*</span></label>
-                    <input type="text" name="title" value={form.title} onChange={handleChange} required placeholder="What did you work on?"
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                      Log Title <span className="text-red-500">*</span>
+                    </label>
+                    <input type="text" name="title" value={form.title} onChange={handleChange}
+                      required placeholder="What did you work on?"
                       className="w-full px-3 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-unilorin-primary dark:focus:ring-blue-500 transition" />
                   </div>
                 </div>
@@ -159,7 +162,8 @@ export default function NewLogPage() {
                       {form.description.length}/50 min
                     </span>
                   </label>
-                  <textarea name="description" value={form.description} onChange={handleChange} required rows={5} placeholder="Describe your activities today in detail (minimum 50 characters)..."
+                  <textarea name="description" value={form.description} onChange={handleChange}
+                    required rows={5} placeholder="Describe your activities today in detail (minimum 50 characters)..."
                     className="w-full px-3 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-unilorin-primary dark:focus:ring-blue-500 transition resize-none" />
                 </div>
 
@@ -180,7 +184,9 @@ export default function NewLogPage() {
                       {skills.map((skill) => (
                         <span key={skill} className="flex items-center gap-1 px-3 py-1 bg-unilorin-accent dark:bg-blue-900/30 text-unilorin-primary dark:text-blue-400 rounded-full text-xs font-medium">
                           {skill}
-                          <button type="button" onClick={() => removeSkill(skill)} className="hover:opacity-70 transition-opacity"><X className="h-3 w-3" /></button>
+                          <button type="button" onClick={() => removeSkill(skill)} className="hover:opacity-70 transition-opacity">
+                            <X className="h-3 w-3" />
+                          </button>
                         </span>
                       ))}
                     </div>
@@ -189,13 +195,13 @@ export default function NewLogPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Challenges Faced</label>
-                  <textarea name="challenges" value={form.challenges} onChange={handleChange} rows={2} placeholder="Any difficulties or challenges you encountered today..."
+                  <textarea name="challenges" value={form.challenges} onChange={handleChange}
+                    rows={2} placeholder="Any difficulties or challenges you encountered today..."
                     className="w-full px-3 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-unilorin-primary dark:focus:ring-blue-500 transition resize-none" />
                 </div>
               </div>
             </Step>
 
-            {/* Checklist */}
             <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
               <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-3 uppercase tracking-wide">Submission Checklist</p>
               <div className="space-y-2">
@@ -208,8 +214,12 @@ export default function NewLogPage() {
                   { done: form.description.length >= 50, label: `Description (${form.description.length}/50 chars min)` },
                 ].map(({ done, label }) => (
                   <div key={label} className="flex items-center gap-2">
-                    {done ? <CheckCircle className="h-4 w-4 text-green-500" /> : <div className="h-4 w-4 rounded-full border-2 border-gray-300 dark:border-gray-600" />}
-                    <span className={`text-xs ${done ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500'}`}>{label}</span>
+                    {done
+                      ? <CheckCircle className="h-4 w-4 text-green-500" />
+                      : <div className="h-4 w-4 rounded-full border-2 border-gray-300 dark:border-gray-600" />}
+                    <span className={`text-xs ${done ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500'}`}>
+                      {label}
+                    </span>
                   </div>
                 ))}
               </div>

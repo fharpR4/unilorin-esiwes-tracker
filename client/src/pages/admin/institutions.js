@@ -1,6 +1,6 @@
 import Head from 'next/head';
 import { useState } from 'react';
-import { Building2, Plus, Pencil, X, Check, Loader2 } from 'lucide-react';
+import { Building2, Plus, Pencil, X, Check, Loader2, Trash2, AlertTriangle } from 'lucide-react';
 import AppLayout from '@/components/layout/AppLayout';
 import useApi from '@/hooks/useApi';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
@@ -18,6 +18,8 @@ export default function AdminInstitutionsPage() {
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const openCreate = () => {
     setForm(EMPTY_FORM);
@@ -35,6 +37,7 @@ export default function AdminInstitutionsPage() {
     });
     setEditId(inst._id);
     setShowForm(true);
+    setDeleteConfirmId(null);
   };
 
   const handleSave = async (e) => {
@@ -66,6 +69,20 @@ export default function AdminInstitutionsPage() {
     }
   };
 
+  const handleDelete = async (id) => {
+    setDeleting(true);
+    try {
+      await api.delete(`/institutions/${id}`);
+      toast.success('Institution deleted.');
+      mutate();
+      setDeleteConfirmId(null);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete institution.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const inputClass = "w-full px-3 py-3 border border-gray-300 dark:border-gray-600 rounded-xl bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-unilorin-primary dark:focus:ring-blue-500 transition";
 
   return (
@@ -84,14 +101,14 @@ export default function AdminInstitutionsPage() {
             </button>
           </div>
 
-          {/* Form */}
           {showForm && (
             <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6">
               <div className="flex items-center justify-between mb-5">
                 <h3 className="text-base font-heading font-bold text-gray-900 dark:text-white">
                   {editId ? 'Edit Institution' : 'New Institution'}
                 </h3>
-                <button onClick={() => setShowForm(false)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                <button onClick={() => { setShowForm(false); setEditId(null); }}
+                  className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
                   <X className="h-4 w-4 text-gray-500" />
                 </button>
               </div>
@@ -135,7 +152,7 @@ export default function AdminInstitutionsPage() {
                     {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                     {saving ? 'Saving...' : editId ? 'Update' : 'Create'}
                   </button>
-                  <button type="button" onClick={() => setShowForm(false)}
+                  <button type="button" onClick={() => { setShowForm(false); setEditId(null); }}
                     className="px-5 py-2.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl text-sm font-medium hover:opacity-80 transition-opacity">
                     Cancel
                   </button>
@@ -144,7 +161,6 @@ export default function AdminInstitutionsPage() {
             </div>
           )}
 
-          {/* List */}
           {isLoading ? (
             <LoadingSpinner />
           ) : institutions.length === 0 ? (
@@ -159,24 +175,52 @@ export default function AdminInstitutionsPage() {
             <div className="space-y-2">
               {institutions.map((inst) => (
                 <div key={inst._id}
-                  className="flex items-center gap-3 p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-                  <div className="w-10 h-10 rounded-xl bg-unilorin-primary/10 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
-                    <Building2 className="h-5 w-5 text-unilorin-primary dark:text-blue-400" />
+                  className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                  <div className="flex items-center gap-3 p-4">
+                    <div className="w-10 h-10 rounded-xl bg-unilorin-primary/10 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+                      <Building2 className="h-5 w-5 text-unilorin-primary dark:text-blue-400" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">{inst.name}</p>
+                      <p className="text-xs text-gray-400">
+                        {inst.acronym && `${inst.acronym} · `}
+                        {inst.address?.city}, {inst.address?.state}
+                        {' · '}<span className="capitalize">{inst.type?.replace('_', ' ')}</span>
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button onClick={() => openEdit(inst)}
+                        className="p-2 text-gray-400 hover:text-unilorin-primary dark:hover:text-blue-400 transition-colors rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button onClick={() => setDeleteConfirmId(deleteConfirmId === inst._id ? null : inst._id)}
+                        className="p-2 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">{inst.name}</p>
-                    <p className="text-xs text-gray-400">
-                      {inst.acronym && `${inst.acronym} · `}
-                      {inst.address?.city}, {inst.address?.state}
-                      {' · '}<span className="capitalize">{inst.type?.replace('_', ' ')}</span>
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => openEdit(inst)}
-                    className="p-2 text-gray-400 hover:text-unilorin-primary dark:hover:text-blue-400 transition-colors rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </button>
+
+                  {deleteConfirmId === inst._id && (
+                    <div className="px-4 pb-4 border-t border-red-100 dark:border-red-900/30 pt-3 bg-red-50 dark:bg-red-900/10">
+                      <div className="flex items-start gap-2 mb-3">
+                        <AlertTriangle className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />
+                        <p className="text-xs text-red-700 dark:text-red-400">
+                          Permanently delete <strong>{inst.name}</strong>? This cannot be undone. Students and coordinators linked to this institution will lose their institution reference.
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => handleDelete(inst._id)} disabled={deleting}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold transition-colors disabled:opacity-50">
+                          {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                          {deleting ? 'Deleting...' : 'Yes, Delete'}
+                        </button>
+                        <button onClick={() => setDeleteConfirmId(null)}
+                          className="px-3 py-1.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg text-xs font-medium hover:opacity-80 transition-opacity">
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

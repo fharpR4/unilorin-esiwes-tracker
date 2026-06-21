@@ -4,7 +4,7 @@ const asyncHandler = require('../utils/asyncHandler');
 
 // @desc    Get all active institutions
 // @route   GET /api/institutions
-// @access  PUBLIC — no auth required (needed for registration)
+// @access  PUBLIC
 const getAllInstitutions = asyncHandler(async (req, res) => {
   const institutions = await Institution.find({ isActive: true })
     .sort({ name: 1 })
@@ -46,15 +46,14 @@ const updateInstitution = asyncHandler(async (req, res, next) => {
   res.status(200).json({ success: true, message: 'Institution updated.', data: { institution } });
 });
 
-// @desc    Deactivate institution (soft delete)
+// @desc    Hard delete institution
 // @route   DELETE /api/institutions/:id
 // @access  Admin
 const deleteInstitution = asyncHandler(async (req, res, next) => {
   const institution = await Institution.findById(req.params.id);
   if (!institution) return next(new ApiError(404, 'Institution not found.'));
-  institution.isActive = false;
-  await institution.save();
-  res.status(200).json({ success: true, message: 'Institution deactivated.' });
+  await institution.deleteOne();
+  res.status(200).json({ success: true, message: 'Institution permanently deleted.' });
 });
 
 module.exports = { getAllInstitutions, createInstitution, updateInstitution, deleteInstitution };
