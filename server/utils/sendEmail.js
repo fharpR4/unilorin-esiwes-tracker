@@ -28,7 +28,7 @@ const sendEmail = async ({ to, subject, html }) => {
   });
 
   const mailOptions = {
-    from: `"UniIlorin E-SIWES" <${process.env.EMAIL_USERNAME}>`,
+    from: `"UNIILORIN SIWES PROGRESS TRACKER" <${process.env.EMAIL_USERNAME}>`,
     to,
     subject,
     html,

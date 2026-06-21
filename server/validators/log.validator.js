@@ -28,7 +28,7 @@ const createLogValidation = [
   body('geolocation.coordinates')
     .isArray({ min: 2, max: 2 }).withMessage('Geolocation must contain [longitude, latitude] coordinates.'),
   body('geolocation.coordinates.*')
-    .isFloat().withMessage('Coordinate values must be valid numbers.'),
+    .isFloat().withMessage('Coordina\te values must be valid numbers.'),
 ];
 
 const approveLogValidation = [

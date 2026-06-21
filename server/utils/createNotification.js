@@ -72,7 +72,7 @@ const logActivity = async ({
       userAgent,
     });
   } catch (err) {
-    console.error('[logActivity] Failed to log activity:', err.message);
+    console.error('[logActivity] Activity logging failed:', err.message);
   }
 };
 
