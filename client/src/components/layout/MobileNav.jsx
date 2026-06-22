@@ -21,14 +21,14 @@ const MOBILE_NAV = {
     { href: '/dashboard/supervisor', icon: LayoutDashboard, label: 'Home' },
     { href: '/supervisor/students', icon: Users, label: 'Students' },
     { href: '/approvals', icon: ClipboardCheck, label: 'Approvals' },
-    { href: '/notifications', icon: Bell, label: 'Alerts', showBadge: true },
+    { href: '/projects/pending', icon: FolderGit2, label: 'Projects' },
     { href: '/profile', icon: Settings, label: 'Profile' },
   ],
   [ROLES.COORDINATOR]: [
     { href: '/dashboard/coordinator', icon: LayoutDashboard, label: 'Home' },
+    { href: '/applications/manage', icon: FileCheck, label: 'Apps' },
     { href: '/students', icon: Users, label: 'Students' },
     { href: '/projects', icon: FolderGit2, label: 'Projects' },
-    { href: '/notifications', icon: Bell, label: 'Alerts', showBadge: true },
     { href: '/profile', icon: Settings, label: 'Profile' },
   ],
   [ROLES.ADMIN]: [
@@ -55,14 +55,20 @@ const MobileNav = () => {
             <Link key={href} href={href}
               className="flex flex-col items-center gap-0.5 px-2 py-1.5 min-w-0 flex-1 relative">
               <div className="relative">
-                <Icon className={cn('h-5 w-5 transition-colors', isActive ? 'text-unilorin-primary dark:text-blue-400' : 'text-gray-400 dark:text-gray-500')} />
+                <Icon className={cn('h-5 w-5 transition-colors', isActive
+                  ? 'text-unilorin-primary dark:text-blue-400'
+                  : 'text-gray-400 dark:text-gray-500')} />
                 {showBadge && unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-red-500 text-white flex items-center justify-center" style={{ fontSize: 8 }}>
+                  <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-red-500 text-white flex items-center justify-center"
+                    style={{ fontSize: 8 }}>
                     {unreadCount > 9 ? '9' : unreadCount}
                   </span>
                 )}
               </div>
-              <span className={cn('text-xs font-medium transition-colors truncate w-full text-center', isActive ? 'text-unilorin-primary dark:text-blue-400' : 'text-gray-400 dark:text-gray-500')}>
+              <span className={cn('text-xs font-medium transition-colors truncate w-full text-center',
+                isActive
+                  ? 'text-unilorin-primary dark:text-blue-400'
+                  : 'text-gray-400 dark:text-gray-500')}>
                 {label}
               </span>
             </Link>
